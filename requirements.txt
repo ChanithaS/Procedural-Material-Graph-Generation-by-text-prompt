@@ -1,0 +1,16 @@
+pyyaml
+imageio
+numpy>=1.11.1
+matplotlib==3.8.2
+scipy
+tqdm
+wandb
+hydra-core
+pytorch_lightning
+torchmetrics
+ipdb
+pdbpp
+networkx==2.8.7
+overrides
+pygsp
+pyemd
