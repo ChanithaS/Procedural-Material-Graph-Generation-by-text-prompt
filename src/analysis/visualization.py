@@ -9,8 +9,6 @@ import networkx as nx
 import numpy as np
 import rdkit.Chem
 import wandb
-import matplotlib
-# matplotlib.use("macOSX")
 import matplotlib.pyplot as plt
 
 
@@ -67,26 +65,25 @@ class MolecularVisualization:
             mol = None
         return mol
 
-    def visualize(self, path: str, molecules: list, num_molecules_to_visualize: int, trainer=None, log='graph'):
+    def visualize(self, path: str, molecules: list, num_molecules_to_visualize: int, log='graph'):
         # define path to save figures
         if not os.path.exists(path):
             os.makedirs(path)
 
         # visualize the final molecules
-        print(f"Visializing {num_molecules_to_visualize} of {len(molecules)}")
+        print(f"Visualizing {num_molecules_to_visualize} of {len(molecules)}")
         if num_molecules_to_visualize > len(molecules):
             print(f"Shortening to {len(molecules)}")
             num_molecules_to_visualize = len(molecules)
         
-        can_log=trainer is not None and hasattr(trainer,"logger") and trainer.logger is not None
         for i in range(num_molecules_to_visualize):
             file_path = os.path.join(path, 'molecule_{}.png'.format(i))
             mol = self.mol_from_graphs(molecules[i][0].numpy(), molecules[i][1].numpy())
             try:
                 Draw.MolToFile(mol, file_path)
-                if can_log:
+                if wandb.run and log is not None:
                     print(f"Saving {file_path} to wandb")
-                    trainer.logger.log_image(key=log, images=[file_path])
+                    wandb.log({log: wandb.Image(file_path)}, commit=True)
             except rdkit.Chem.KekulizeException:
                 print("Can't kekulize molecule")
 
@@ -125,12 +122,11 @@ class MolecularVisualization:
         imgs = [imageio.imread(fn) for fn in save_paths]
         gif_path = os.path.join(os.path.dirname(path), '{}.gif'.format(path.split('/')[-1]))
         imgs.extend([imgs[-1]] * 10)
-        imageio.mimsave(gif_path, imgs, subrectangles=True, fps=5)
+        imageio.mimsave(gif_path, imgs, subrectangles=True, duration=20)
 
-        can_log=trainer is not None and hasattr(trainer,"logger") and trainer.logger is not None
-        if can_log:
+        if wandb.run:
             print(f"Saving {gif_path} to wandb")
-            trainer.logger.experiment.log({'chain': [wandb.Video(gif_path, caption=gif_path, format="gif")]})
+            wandb.log({"chain": wandb.Video(gif_path, fps=5, format="gif")}, commit=True)
 
         # draw grid image
         try:
@@ -187,8 +183,7 @@ class NonMolecularVisualization:
         plt.savefig(path)
         plt.close("all")
 
-    def visualize(self, path: str, graphs: list, num_graphs_to_visualize: int, log='graph', trainer=None):
-        # TODO: implement the multi-gpu case
+    def visualize(self, path: str, graphs: list, num_graphs_to_visualize: int, log='graph'):
         # define path to save figures
         if not os.path.exists(path):
             os.makedirs(path)
@@ -199,9 +194,10 @@ class NonMolecularVisualization:
             graph = self.to_networkx(graphs[i][0].numpy(), graphs[i][1].numpy())
             self.visualize_non_molecule(graph=graph, pos=None, path=file_path)
             im = plt.imread(file_path)
-            wandb.log({log: [wandb.Image(im, caption=file_path)]})
+            if wandb.run and log is not None:
+                wandb.log({log: [wandb.Image(im, caption=file_path)]})
 
-    def visualize_chain(self, path, nodes_list, adjacency_matrix, trainer=None):
+    def visualize_chain(self, path, nodes_list, adjacency_matrix):
         # convert graphs to networkx
         graphs = [self.to_networkx(nodes_list[i], adjacency_matrix[i]) for i in range(nodes_list.shape[0])]
         # find the coordinates of atoms in the final molecule
@@ -220,6 +216,6 @@ class NonMolecularVisualization:
         imgs = [imageio.imread(fn) for fn in save_paths]
         gif_path = os.path.join(os.path.dirname(path), '{}.gif'.format(path.split('/')[-1]))
         imgs.extend([imgs[-1]] * 10)
-        imageio.mimsave(gif_path, imgs, subrectangles=True, fps=5)
-        wandb.log({'chain': [wandb.Video(gif_path, caption=gif_path, format="gif")]})
-        return
+        imageio.mimsave(gif_path, imgs, subrectangles=True, duration=20)
+        if wandb.run:
+            wandb.log({'chain': [wandb.Video(gif_path, caption=gif_path, format="gif")]})

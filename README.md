@@ -1,1 +1,1 @@
-Still under development
+Use graph_tool version 2.59

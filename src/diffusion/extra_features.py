@@ -1,5 +1,4 @@
 import torch
-# from torch_geometric.transforms import largest_connected_components
 from src import utils
 
 
@@ -162,29 +161,17 @@ def get_eigenvectors_features(vectors, node_mask, n_connected, k=2):
     returns:
         not_lcc_indicator : indicator vectors of largest connected component (lcc) for each graph  -- (bs, n, 1)
         k_lowest_eigvec : k first eigenvectors for the largest connected component   -- (bs, n, k)
-    Warning: this function does not exactly return what is desired, the lcc might not be exactly the returned vector.
     """
     bs, n = vectors.size(0), vectors.size(1)
 
     # Create an indicator for the nodes outside the largest connected components
-    k0 = min(n, 5)
-    first_evs = vectors[:, :, :k0]                         # bs, n, k0
-    quantized = torch.round(first_evs * 1000) / 1000       # bs, n, k0
-    random_mask = (50 * torch.ones((bs, n, k0)).type_as(vectors)) * (~node_mask.unsqueeze(-1))         # bs, n, k0
-    min_batched = torch.min(quantized + random_mask, dim=1).values.unsqueeze(1)       # bs, 1, k0
-    max_batched = torch.max(quantized - random_mask, dim=1).values.unsqueeze(1)       # bs, 1, k0
-    nonzero_mask = quantized.abs() >= 1e-5
-    is_min = (quantized == min_batched) * nonzero_mask * node_mask.unsqueeze(2)                      # bs, n, k0
-    is_max = (quantized == max_batched) * nonzero_mask * node_mask.unsqueeze(2)                      # bs, n, k0
-    is_other = (quantized != min_batched) * (quantized != max_batched) * nonzero_mask * node_mask.unsqueeze(2)
-
-    all_masks = torch.cat((is_min.unsqueeze(-1), is_max.unsqueeze(-1), is_other.unsqueeze(-1)), dim=3)    # bs, n, k0, 3
-    all_masks = all_masks.flatten(start_dim=-2)      # bs, n, k0 x 3
-    counts = torch.sum(all_masks, dim=1)      # bs, k0 x 3
-
-    argmax_counts = torch.argmax(counts, dim=1)       # bs
-    lcc_indicator = all_masks[torch.arange(bs), :, argmax_counts]                   # bs, n
-    not_lcc_indicator = ((~lcc_indicator).float() * node_mask).unsqueeze(2)
+    first_ev = torch.round(vectors[:, :, 0], decimals=3) * node_mask                        # bs, n
+    # Add random value to the mask to prevent 0 from becoming the mode
+    random = torch.randn(bs, n, device=node_mask.device) * (~node_mask)                                   # bs, n
+    first_ev = first_ev + random
+    most_common = torch.mode(first_ev, dim=1).values                                    # values: bs -- indices: bs
+    mask = ~ (first_ev == most_common.unsqueeze(1))
+    not_lcc_indicator = (mask * node_mask).unsqueeze(-1).float()
 
     # Get the eigenvectors corresponding to the first nonzero eigenvalues
     to_extend = max(n_connected) + k - n
@@ -196,7 +183,6 @@ def get_eigenvectors_features(vectors, node_mask, n_connected, k=2):
     first_k_ev = first_k_ev * node_mask.unsqueeze(2)
 
     return not_lcc_indicator, first_k_ev
-
 
 def batch_trace(X):
     """
@@ -247,7 +233,6 @@ class KNodeCycles:
     def k5_cycle(self):
         diag_a5 = batch_diagonal(self.k5_matrix)
         triangles = batch_diagonal(self.k3_matrix)
-
         c5 = diag_a5 - 2 * triangles * self.d - (self.adj_matrix @ triangles.unsqueeze(-1)).sum(dim=-1) + triangles
         return (c5 / 2).unsqueeze(-1).float(), (c5.sum(dim=-1) / 10).unsqueeze(-1).float()
 

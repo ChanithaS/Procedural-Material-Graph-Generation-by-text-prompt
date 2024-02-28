@@ -5,11 +5,13 @@ import math
 
 from src.utils import PlaceHolder
 
-
+# Core Mathematical Operations
+# Used for aggregation operations within graph neural networks. For instance, when calculating neighborhood features, you might sum features over all neighbors of a node while ignoring the batch dimension.
 def sum_except_batch(x):
     return x.reshape(x.size(0), -1).sum(dim=-1)
 
-
+# Graph-Specific Operations
+# Ensuring masking is crucial in graph neural networks when dealing with variable-sized graphs in a batch.  This function verifies that data (e.g., features, adjacency representations) is correctly masked to represent the actual graph structure.
 def assert_correctly_masked(variable, node_mask):
     assert (variable * (1 - node_mask.long())).abs().max().item() < 1e-4, \
         'Variables not masked properly.'
@@ -19,14 +21,16 @@ def sample_gaussian(size):
     x = torch.randn(size)
     return x
 
-
+# Graph-Specific Operations
+# In generative graph models, you might need to initialize node or edge features from a random distribution (like a Gaussian). This function lets you selectively apply the randomness only to valid elements based on the graph structure (mask).
 def sample_gaussian_with_mask(size, node_mask):
     x = torch.randn(size)
     x = x.type_as(node_mask.float())
     x_masked = x * node_mask
     return x_masked
 
-
+# Noise Handling
+# Following 4 functions = Diffusion models involve a process of gradually adding noise to data and then learning to reverse that process. These functions control that noise-injection scheme.
 def clip_noise_schedule(alphas2, clip_value=0.001):
     """
     For a noise schedule given by alpha^2, this clips alpha_t / alpha_t-1. This may help improve stability during
@@ -96,8 +100,8 @@ def custom_beta_schedule_discrete(timesteps, average_num_nodes=50, s=0.008):
     betas[betas < beta_first] = beta_first
     return np.array(betas)
 
-
-
+# Core Mathematical Operations
+# Often employed in diffusion models, Variational Autoencoders (VAEs), and other generative models that work with Gaussian distributions. It allows you to measure the similarity (or dissimilarity) between distributions,  which is critical for optimization.
 def gaussian_KL(q_mu, q_sigma):
     """Computes the KL distance between a normal distribution and the standard normal.
         Args:
@@ -110,7 +114,8 @@ def gaussian_KL(q_mu, q_sigma):
         """
     return sum_except_batch((torch.log(1 / q_sigma) + 0.5 * (q_sigma ** 2 + q_mu ** 2) - 0.5))
 
-
+# Core Mathematical Operations
+# Likely less directly applicable to graph generation, these functions find use in probability, statistics, and noise modeling within broader machine learning contexts.
 def cdf_std_gaussian(x):
     return 0.5 * (1. + torch.erf(x / math.sqrt(2)))
 
@@ -119,7 +124,7 @@ def SNR(gamma):
     """Computes signal to noise ratio (alpha^2/sigma^2) given gamma."""
     return torch.exp(-gamma)
 
-
+# All functions marked as Helpers =  Utility functions often needed for preprocessing, shape manipulation, and debugging in models working with batches of graphs.
 def inflate_batch_array(array, target_shape):
     """
     Inflates the batch array (array) with only a single axis (i.e. shape = (batch_size,), or possibly more empty
@@ -128,30 +133,31 @@ def inflate_batch_array(array, target_shape):
     target_shape = (array.size(0),) + (1,) * (len(target_shape) - 1)
     return array.view(target_shape)
 
-
+# all Sampling and Distribution Calculations = 
+# These functions, in concert with noise schedules, support the generative process of diffusion models. They compute the values necessary for sampling intermediate steps while "denoising" a graph from a completely noisy state.
 def sigma(gamma, target_shape):
     """Computes sigma given gamma."""
     return inflate_batch_array(torch.sqrt(torch.sigmoid(gamma)), target_shape)
 
-
+# Sampling and Distribution Calculations
 def alpha(gamma, target_shape):
     """Computes alpha given gamma."""
     return inflate_batch_array(torch.sqrt(torch.sigmoid(-gamma)), target_shape)
 
-
+# Helpers
 def check_mask_correct(variables, node_mask):
     for i, variable in enumerate(variables):
         if len(variable) > 0:
             assert_correctly_masked(variable, node_mask)
 
-
+# Helpers
 def check_tensor_same_size(*args):
     for i, arg in enumerate(args):
         if i == 0:
             continue
         assert args[0].size() == arg.size()
 
-
+# Sampling and Distribution Calculations
 def sigma_and_alpha_t_given_s(gamma_t: torch.Tensor, gamma_s: torch.Tensor, target_size: torch.Size):
     """
     Computes sigma t given s, using gamma_t and gamma_s. Used during sampling.
@@ -176,11 +182,12 @@ def sigma_and_alpha_t_given_s(gamma_t: torch.Tensor, gamma_s: torch.Tensor, targ
 
     return sigma2_t_given_s, sigma_t_given_s, alpha_t_given_s
 
-
+# Helpers
 def reverse_tensor(x):
     return x[torch.arange(x.size(0) - 1, -1, -1)]
 
-
+# Generates random noise samples tailored to the structure of a graph. This noise, typically Gaussian, is injected into node features (X), edge features (E), and potentially global graph features (y).
+# The node_mask is essential. It ensures that noise is only injected into parts of the graph that actually exist. For instance, if you're working with a partially connected graph, you don't want to add noise to nonexistent nodes or edges.
 def sample_feature_noise(X_size, E_size, y_size, node_mask):
     """Standard normal noise for all features.
         Output size: X.size(), E.size(), y.size() """
@@ -206,7 +213,7 @@ def sample_feature_noise(X_size, E_size, y_size, node_mask):
 
     return PlaceHolder(X=epsX, E=epsE, y=epsy).mask(node_mask)
 
-
+# Samples from a normal (Gaussian) distribution, but with the distribution's parameters (mu: mean, sigma: standard deviation) potentially being dependent on graph structures.
 def sample_normal(mu_X, mu_E, mu_y, sigma, node_mask):
     """Samples from a Normal distribution."""
     # TODO: change for multi-gpu case
@@ -216,7 +223,7 @@ def sample_normal(mu_X, mu_E, mu_y, sigma, node_mask):
     y = mu_y + sigma.squeeze(1) * eps.y
     return PlaceHolder(X=X, E=E, y=y)
 
-
+# A quality control function. Makes sure that values used for normalization remain within reasonable bounds. This helps prevent numerical instabilities during model training.
 def check_issues_norm_values(gamma, norm_val1, norm_val2, num_stdevs=8):
     """ Check if 1 / norm_value is still larger than 10 * standard deviation. """
     zeros = torch.zeros((1, 1))
@@ -229,44 +236,44 @@ def check_issues_norm_values(gamma, norm_val1, norm_val2, num_stdevs=8):
             f'large with sigma_0 {sigma_0:.5f} and '
             f'1 / norm_value = {1. / max_norm_value}')
 
-
+# want to predict and sample categorical features associated with a graph.  This function helps sample from the predicted distributions.
+# Probabilities for non-existent nodes/edges should be properly managed, which likely is why the function manipulates probX and probE based on the node_mask.
 def sample_discrete_features(probX, probE, node_mask):
     ''' Sample features from multinomial distribution with given probabilities (probX, probE, proby)
         :param probX: bs, n, dx_out        node features
         :param probE: bs, n, n, de_out     edge features
         :param proby: bs, dy_out           global features.
     '''
+    bs, n, _ = probX.shape
     # Noise X
     # The masked rows should define probability distributions as well
     probX[~node_mask] = 1 / probX.shape[-1]
 
     # Flatten the probability tensor to sample with multinomial
-    probX = probX.reshape(probX.size(0) * probX.size(1), -1)       # (bs * n, dx_out)
-    # assert (abs(probX.sum(dim=-1) - 1) < 1e-4).all()
+    probX = probX.reshape(bs * n, -1)       # (bs * n, dx_out)
 
     # Sample X
     X_t = probX.multinomial(1)                                  # (bs * n, 1)
-    X_t = X_t.reshape(node_mask.size(0), node_mask.size(1))     # (bs, n)
+    X_t = X_t.reshape(bs, n)     # (bs, n)
 
     # Noise E
     # The masked rows should define probability distributions as well
     inverse_edge_mask = ~(node_mask.unsqueeze(1) * node_mask.unsqueeze(2))
-    diag_mask = torch.zeros(probE.size(0), probE.size(1), probE.size(2)) + \
-                torch.eye(probE.size(1), probE.size(2)).unsqueeze(0)
+    diag_mask = torch.eye(n).unsqueeze(0).expand(bs, -1, -1)
 
     probE[inverse_edge_mask] = 1 / probE.shape[-1]
     probE[diag_mask.bool()] = 1 / probE.shape[-1]
 
-    probE = probE.reshape(probE.size(0) * probE.size(1) * probE.size(2), -1)    # (bs * n * n, de_out)
+    probE = probE.reshape(bs * n * n, -1)    # (bs * n * n, de_out)
 
     # Sample E
-    E_t = probE.multinomial(1).reshape(node_mask.size(0), node_mask.size(1), node_mask.size(1))   # (bs, n, n)
+    E_t = probE.multinomial(1).reshape(bs, n, n)   # (bs, n, n)
     E_t = torch.triu(E_t, diagonal=1)
     E_t = (E_t + torch.transpose(E_t, 1, 2))
 
-    return PlaceHolder(X=X_t, E=E_t, y=torch.zeros(X_t.shape[0], 0).type_as(X_t))
+    return PlaceHolder(X=X_t, E=E_t, y=torch.zeros(bs, 0).type_as(X_t))
 
-
+# This set of functions likely calculates posterior distributions within a probabilistic graph model (potentially a diffusion model).  In simple terms, they might compute the probability of specific graph features given some observed or partially observed state.
 def compute_posterior_distribution(M, M_t, Qt_M, Qsb_M, Qtb_M):
     ''' M: X or E
         Compute xt @ Qt.T * x0 @ Qsb / x0 @ Qtb @ xt.T
@@ -321,9 +328,19 @@ def compute_batched_over0_posterior_distribution(X_t, Qt, Qsb, Qtb):
     out = numerator / denominator
     return out
 
-
+# Prepares probability distributions (true vs. predicted) for computing a loss function in graph models. It ensures invalid parts of the distributions (for non-existent nodes/edges) don't influence the loss.
+# Calculating losses when training any graph generative model based on probabilistic predictions.
 def mask_distributions(true_X, true_E, pred_X, pred_E, node_mask):
-    # Set masked rows to arbitrary distributions, so it doesn't contribute to loss
+    """
+    Set masked rows to arbitrary distributions, so it doesn't contribute to loss
+    :param true_X: bs, n, dx_out
+    :param true_E: bs, n, n, de_out
+    :param pred_X: bs, n, dx_out
+    :param pred_E: bs, n, n, de_out
+    :param node_mask: bs, n
+    :return: same sizes as input
+    """
+
     row_X = torch.zeros(true_X.size(-1), dtype=torch.float, device=true_X.device)
     row_X[0] = 1.
     row_E = torch.zeros(true_E.size(-1), dtype=torch.float, device=true_E.device)
@@ -331,9 +348,19 @@ def mask_distributions(true_X, true_E, pred_X, pred_E, node_mask):
 
     diag_mask = ~torch.eye(node_mask.size(1), device=node_mask.device, dtype=torch.bool).unsqueeze(0)
     true_X[~node_mask] = row_X
-    true_E[~(node_mask.unsqueeze(1) * node_mask.unsqueeze(2) * diag_mask), :] = row_E
     pred_X[~node_mask] = row_X
+    true_E[~(node_mask.unsqueeze(1) * node_mask.unsqueeze(2) * diag_mask), :] = row_E
     pred_E[~(node_mask.unsqueeze(1) * node_mask.unsqueeze(2) * diag_mask), :] = row_E
+
+    true_X = true_X + 1e-7
+    pred_X = pred_X + 1e-7
+    true_E = true_E + 1e-7
+    pred_E = pred_E + 1e-7
+
+    true_X = true_X / torch.sum(true_X, dim=-1, keepdim=True)
+    pred_X = pred_X / torch.sum(pred_X, dim=-1, keepdim=True)
+    true_E = true_E / torch.sum(true_E, dim=-1, keepdim=True)
+    pred_E = pred_E / torch.sum(pred_E, dim=-1, keepdim=True)
 
     return true_X, true_E, pred_X, pred_E
 

@@ -7,14 +7,15 @@ import numpy as np
 import pytorch_lightning as pl
 import wandb
 
-from src.models.transformer_model import GraphTransformer
+from models.transformer_model import GraphTransformer
 from diffusion.noise_schedule import PredefinedNoiseSchedule
 from src.diffusion import diffusion_utils
-from src.metrics.train_metrics import TrainLoss
-from src.metrics.abstract_metrics import SumExceptBatchMetric, SumExceptBatchMSE, NLL
+from metrics.train_metrics import TrainLoss
+from metrics.abstract_metrics import SumExceptBatchMetric, SumExceptBatchMSE, NLL
 from src import utils
 
-
+# LDDMs are an extension of discrete denoising diffusion models that introduce a concept of "lifting" data into a higher-dimensional continuous space.
+# More complex
 class LiftedDenoisingDiffusion(pl.LightningModule):
     def __init__(self, cfg, dataset_infos, train_metrics, sampling_metrics, visualization_tools, extra_features=None,
                  domain_features=None):
@@ -65,7 +66,7 @@ class LiftedDenoisingDiffusion(pl.LightningModule):
         self.sampling_metrics = sampling_metrics
         self.visualization_tools = visualization_tools
 
-        self.save_hyperparameters(ignore=[train_metrics, sampling_metrics])
+        self.save_hyperparameters(ignore=['train_metrics', 'sampling_metrics'])
         self.visualization_tools = visualization_tools
 
         self.model = GraphTransformer(n_layers=cfg.model.n_layers,
@@ -120,6 +121,8 @@ class LiftedDenoisingDiffusion(pl.LightningModule):
 
     def on_fit_start(self) -> None:
         self.train_iterations = len(self.trainer.datamodule.train_dataloader())
+        if self.local_rank == 0:
+            utils.setup_wandb(self.cfg)
 
     def on_train_epoch_start(self) -> None:
         self.start_epoch_time = time.time()
@@ -127,8 +130,13 @@ class LiftedDenoisingDiffusion(pl.LightningModule):
         self.train_metrics.reset()
 
     def on_train_epoch_end(self) -> None:
-        self.train_loss.log_epoch_metrics(self.current_epoch, self.start_epoch_time)
-        self.train_metrics.log_epoch_metrics(self.current_epoch)
+        to_log = self.train_loss.log_epoch_metrics()
+        self.print(f"Epoch {self.current_epoch}: X_mse: {to_log['train_epoch/epoch_X_mse'] :.3f}"
+                      f" -- E mse: {to_log['train_epoch/epoch_E_mse'] :.3f} --"
+                      f" y_mse: {to_log['train_epoch/epoch_y_mse'] :.3f}"
+                      f" -- {time.time() - self.start_epoch_time:.1f}s ")
+        epoch_at_metrics, epoch_bond_metrics = self.train_metrics.log_epoch_metrics()
+        self.print(f"Epoch {self.current_epoch}: {epoch_at_metrics} -- {epoch_bond_metrics}")
 
     def on_validation_epoch_start(self) -> None:
         self.val_nll.reset()
@@ -154,17 +162,18 @@ class LiftedDenoisingDiffusion(pl.LightningModule):
                                     node_mask, test=False)
         return {'loss': nll}
 
-    def validation_epoch_end(self, outs) -> None:
+    def on_validation_epoch_end(self) -> None:
         metrics = [self.val_nll.compute(), self.val_X_mse.compute(), self.val_E_mse.compute(),
                    self.val_y_mse.compute(), self.val_X_logp.compute(), self.val_E_logp.compute(),
                    self.val_y_logp.compute()]
-        wandb.log({"val/epoch_NLL": metrics[0],
-                   "val/X_mse": metrics[1],
-                   "val/E_mse": metrics[2],
-                   "val/y_mse": metrics[3],
-                   "val/X_logp": metrics[4],
-                   "val/E_logp": metrics[5],
-                   "val/y_logp": metrics[6]}, commit=False)
+        if wandb.run:
+            wandb.log({"val/epoch_NLL": metrics[0],
+                       "val/X_mse": metrics[1],
+                       "val/E_mse": metrics[2],
+                       "val/y_mse": metrics[3],
+                       "val/X_logp": metrics[4],
+                       "val/E_logp": metrics[5],
+                       "val/y_logp": metrics[6]}, commit=False)
 
         print(f"Epoch {self.current_epoch}: Val NLL {metrics[0] :.2f} -- Val Atom type MSE {metrics[1] :.2f} -- ",
               f"Val Edge type MSE: {metrics[2] :.2f} -- Val Global feat. MSE {metrics[3] :.2f}",
@@ -174,7 +183,8 @@ class LiftedDenoisingDiffusion(pl.LightningModule):
         # Log val nll with default Lightning logger, so it can be monitored by checkpoint callback
         val_nll = metrics[0]
         self.log("val/epoch_NLL", val_nll, sync_dist=True)
-        wandb.log(self.log_info(), commit=False)
+        if wandb.run:
+            wandb.log(self.log_info(), commit=False)
 
         if val_nll < self.best_val_nll:
             self.best_val_nll = val_nll
@@ -218,6 +228,8 @@ class LiftedDenoisingDiffusion(pl.LightningModule):
         self.test_X_logp.reset()
         self.test_E_logp.reset()
         self.test_y_logp.reset()
+        if self.local_rank == 0:
+            utils.setup_wandb(self.cfg)
 
     def test_step(self, data, i):
         dense_data, node_mask = utils.to_dense(x=data.x, edge_index=data.edge_index, edge_attr=data.edge_attr,
@@ -232,7 +244,7 @@ class LiftedDenoisingDiffusion(pl.LightningModule):
                                     normalized_data.y, node_mask, test=True)
         return {'loss': nll}
 
-    def test_epoch_end(self, outs) -> None:
+    def on_test_epoch_end(self) -> None:
         """ Measure likelihood on a test set and compute stability metrics. """
         metrics = [self.test_nll.compute(), self.test_X_mse.compute(), self.test_E_mse.compute(),
                    self.test_y_mse.compute(), self.test_X_logp.compute(), self.test_E_logp.compute(),
@@ -244,7 +256,8 @@ class LiftedDenoisingDiffusion(pl.LightningModule):
          "test/X_logp": metrics[4],
          "test/E_logp": metrics[5],
          "test/y_logp": metrics[6]}
-        wandb.log(log_dict, commit = False)
+        if wandb.run:
+            wandb.log(log_dict, commit=False)
 
         print(f"Epoch {self.current_epoch}: Test NLL {metrics[0] :.2f} -- Test Atom type MSE {metrics[1] :.2f} -- ",
               f"Test Edge type MSE: {metrics[2] :.2f} -- Test Global feat. MSE {metrics[3] :.2f}",
@@ -252,8 +265,9 @@ class LiftedDenoisingDiffusion(pl.LightningModule):
               f"-- Test y Reconstruction loss {metrics[6] : .2f}\n")
 
         test_nll = metrics[0]
-        wandb.log({"test/epoch_NLL": test_nll}, commit=False)
-        wandb.log(self.log_info(), commit=False)
+        if wandb.run:
+            wandb.log({"test/epoch_NLL": test_nll}, commit=False)
+            wandb.log(self.log_info(), commit=False)
 
         print(f'Test loss: {test_nll :.4f}')
 
@@ -668,7 +682,7 @@ class LiftedDenoisingDiffusion(pl.LightningModule):
             current_path = os.getcwd()
             result_path = os.path.join(current_path,
                                        f'graphs/{self.name}/epoch{self.current_epoch}_b{batch_id}/')
-            self.visualization_tools.visualize(result_path, molecule_list, save_final)
+            self.visualization_tools.visualize(result_path, molecule_list, save_final, log='graph')
             print("Done.")
 
         return molecule_list

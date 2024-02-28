@@ -14,8 +14,8 @@ class TrainAbstractMetricsDiscrete(torch.nn.Module):
     def reset(self):
         pass
 
-    def log_epoch_metrics(self, current_epoch):
-        pass
+    def log_epoch_metrics(self):
+        return None, None
 
 
 class TrainAbstractMetrics(torch.nn.Module):
@@ -28,12 +28,11 @@ class TrainAbstractMetrics(torch.nn.Module):
     def reset(self):
         pass
 
-    def log_epoch_metrics(self, current_epoch):
-        pass
+    def log_epoch_metrics(self):
+        return None, None
 
 
 class SumExceptBatchMetric(Metric):
-    full_state_update = True
     def __init__(self):
         super().__init__()
         self.add_state('total_value', default=torch.tensor(0.), dist_reduce_fx="sum")
@@ -74,8 +73,6 @@ class SumExceptBatchMSE(MeanSquaredError):
 
 
 class SumExceptBatchKL(Metric):
-    full_state_update = True
-
     def __init__(self):
         super().__init__()
         self.add_state('total_value', default=torch.tensor(0.), dist_reduce_fx="sum")
@@ -90,8 +87,6 @@ class SumExceptBatchKL(Metric):
 
 
 class CrossEntropyMetric(Metric):
-    full_state_update = True
-
     def __init__(self):
         super().__init__()
         self.add_state('total_ce', default=torch.tensor(0.), dist_reduce_fx="sum")
@@ -126,7 +121,6 @@ class ProbabilityMetric(Metric):
 
 
 class NLL(Metric):
-    full_state_update = True
     def __init__(self):
         super().__init__()
         self.add_state('total_nll', default=torch.tensor(0.), dist_reduce_fx="sum")

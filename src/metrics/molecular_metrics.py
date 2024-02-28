@@ -25,14 +25,14 @@ class TrainMolecularMetrics(nn.Module):
                 to_log['train/' + key] = val.item()
             for key, val in self.train_bond_metrics.compute().items():
                 to_log['train/' + key] = val.item()
-
-            wandb.log(to_log, commit=False)
+            if wandb.run:
+                wandb.log(to_log, commit=False)
 
     def reset(self):
         for metric in [self.train_atom_metrics, self.train_bond_metrics]:
             metric.reset()
 
-    def log_epoch_metrics(self, current_epoch):
+    def log_epoch_metrics(self):
         epoch_atom_metrics = self.train_atom_metrics.compute()
         epoch_bond_metrics = self.train_bond_metrics.compute()
 
@@ -42,14 +42,16 @@ class TrainMolecularMetrics(nn.Module):
         for key, val in epoch_bond_metrics.items():
             to_log['train_epoch/epoch' + key] = val.item()
 
-        wandb.log(to_log, commit=False)
+        if wandb.run:
+            wandb.log(to_log, commit=False)
 
         for key, val in epoch_atom_metrics.items():
             epoch_atom_metrics[key] = f"{val.item() :.3f}"
         for key, val in epoch_bond_metrics.items():
             epoch_bond_metrics[key] = f"{val.item() :.3f}"
 
-        print(f"Epoch {current_epoch}: {epoch_atom_metrics} -- {epoch_bond_metrics}")
+        return epoch_atom_metrics, epoch_bond_metrics
+
 
 
 class SamplingMolecularMetrics(nn.Module):
@@ -61,7 +63,6 @@ class SamplingMolecularMetrics(nn.Module):
         self.generated_edge_dist = GeneratedEdgesDistribution(di.output_dims['E'])
         self.generated_valency_dist = ValencyDistribution(di.max_n_nodes)
 
-        num_atoms_max = di.max_n_nodes
         n_target_dist = di.n_nodes.type_as(self.generated_n_dist.n_dist)
         n_target_dist = n_target_dist / torch.sum(n_target_dist)
         self.register_buffer('n_target_dist', n_target_dist)
@@ -86,16 +87,17 @@ class SamplingMolecularMetrics(nn.Module):
         self.train_smiles = train_smiles
         self.dataset_info = di
 
-    def forward(self, molecules: list, name, current_epoch, val_counter, test=False):
+    def forward(self, molecules: list, name, current_epoch, val_counter, local_rank, test=False):
         stability, rdkit_metrics, all_smiles = compute_molecular_metrics(molecules, self.train_smiles, self.dataset_info)
 
-        if test:
+        if test and local_rank == 0:
             with open(r'final_smiles.txt', 'w') as fp:
                 for smiles in all_smiles:
                     # write each item on a new line
                     fp.write("%s\n" % smiles)
                 print('All smiles saved')
 
+        print("Starting custom metrics")
         self.generated_n_dist(molecules)
         generated_n_dist = self.generated_n_dist.compute()
         self.n_dist_mae(generated_n_dist)
@@ -121,7 +123,6 @@ class SamplingMolecularMetrics(nn.Module):
         for j, bond_type in enumerate(['No bond', 'Single', 'Double', 'Triple', 'Aromatic']):
             generated_probability = generated_edge_dist[j]
             target_probability = self.edge_target_dist[j]
-
             to_log[f'molecular_metrics/bond_{bond_type}_dist'] = (generated_probability - target_probability).item()
 
         for valency in range(6):
@@ -129,23 +130,31 @@ class SamplingMolecularMetrics(nn.Module):
             target_probability = self.valency_target_dist[valency]
             to_log[f'molecular_metrics/valency_{valency}_dist'] = (generated_probability - target_probability).item()
 
-        wandb.log(to_log, commit=False)
+        n_mae = self.n_dist_mae.compute()
+        node_mae = self.node_dist_mae.compute()
+        edge_mae = self.edge_dist_mae.compute()
+        valency_mae = self.valency_dist_mae.compute()
 
-        wandb.run.summary['Gen n distribution'] = generated_n_dist
-        wandb.run.summary['Gen node distribution'] = generated_node_dist
-        wandb.run.summary['Gen edge distribution'] = generated_edge_dist
-        wandb.run.summary['Gen valency distribution'] = generated_valency_dist
+        if wandb.run:
+            wandb.log(to_log, commit=False)
+            wandb.run.summary['Gen n distribution'] = generated_n_dist
+            wandb.run.summary['Gen node distribution'] = generated_node_dist
+            wandb.run.summary['Gen edge distribution'] = generated_edge_dist
+            wandb.run.summary['Gen valency distribution'] = generated_valency_dist
 
-        wandb.log({'basic_metrics/n_mae': self.n_dist_mae.compute(),
-                   'basic_metrics/node_mae': self.node_dist_mae.compute(),
-                   'basic_metrics/edge_mae': self.edge_dist_mae.compute(),
-                   'basic_metrics/valency_mae': self.valency_dist_mae.compute()}, commit=False)
+            wandb.log({'basic_metrics/n_mae': n_mae,
+                       'basic_metrics/node_mae': node_mae,
+                       'basic_metrics/edge_mae': edge_mae,
+                       'basic_metrics/valency_mae': valency_mae}, commit=False)
 
-        valid_unique_molecules = rdkit_metrics[1]
-        textfile = open(f'graphs/{name}/valid_unique_molecules_e{current_epoch}_b{val_counter}.txt', "w")
-        textfile.writelines(valid_unique_molecules)
-        textfile.close()
-        print("Stability metrics:", stability, "--", rdkit_metrics[0])
+        if local_rank == 0:
+            print("Custom metrics computed.")
+        if local_rank == 0:
+            valid_unique_molecules = rdkit_metrics[1]
+            textfile = open(f'graphs/{name}/valid_unique_molecules_e{current_epoch}_b{val_counter}.txt', "w")
+            textfile.writelines(valid_unique_molecules)
+            textfile.close()
+            print("Stability metrics:", stability, "--", rdkit_metrics[0])
 
     def reset(self):
         for metric in [self.n_dist_mae, self.node_dist_mae, self.edge_dist_mae, self.valency_dist_mae]:
@@ -384,194 +393,6 @@ class BondMetrics(MetricCollection):
         mse_TR = TripleMSE(3)
         mse_AR = AromaticMSE(4)
         super().__init__([mse_no_bond, mse_SI, mse_DO, mse_TR, mse_AR])
-
-
-class CEPerClass(Metric):
-    full_state_update = False
-    def __init__(self, class_id):
-        super().__init__()
-        self.class_id = class_id
-        self.add_state('total_ce', default=torch.tensor(0.), dist_reduce_fx="sum")
-        self.add_state('total_samples', default=torch.tensor(0.), dist_reduce_fx="sum")
-        self.softmax = torch.nn.Softmax(dim=-1)
-        self.binary_cross_entropy = torch.nn.BCELoss(reduction='sum')
-
-    def update(self, preds: Tensor, target: Tensor) -> None:
-        """Update state with predictions and targets.
-        Args:
-            preds: Predictions from model   (bs, n, d) or (bs, n, n, d)
-            target: Ground truth values     (bs, n, d) or (bs, n, n, d)
-        """
-        target = target.reshape(-1, target.shape[-1])
-        mask = (target != 0.).any(dim=-1)
-
-        prob = self.softmax(preds)[..., self.class_id]
-        prob = prob.flatten()[mask]
-
-        target = target[:, self.class_id]
-        target = target[mask]
-
-        output = self.binary_cross_entropy(prob, target)
-        self.total_ce += output
-        self.total_samples += prob.numel()
-
-    def compute(self):
-        return self.total_ce / self.total_samples
-
-
-class HydrogenCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class CarbonCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class NitroCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class OxyCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class FluorCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class BoronCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class BrCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class ClCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class IodineCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class PhosphorusCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class SulfurCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class SeCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class SiCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class NoBondCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class SingleCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class DoubleCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class TripleCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class AromaticCE(CEPerClass):
-    def __init__(self, i):
-        super().__init__(i)
-
-
-class AtomMetricsCE(MetricCollection):
-    def __init__(self, dataset_infos):
-        atom_decoder = dataset_infos.atom_decoder
-
-        class_dict = {'H': HydrogenCE, 'C': CarbonCE, 'N': NitroCE, 'O': OxyCE, 'F': FluorCE, 'B': BoronCE,
-                      'Br': BrCE, 'Cl': ClCE, 'I': IodineCE, 'P': PhosphorusCE, 'S': SulfurCE, 'Se': SeCE,
-                      'Si': SiCE}
-
-        metrics_list = []
-        for i, atom_type in enumerate(atom_decoder):
-            metrics_list.append(class_dict[atom_type](i))
-        super().__init__(metrics_list)
-
-
-class BondMetricsCE(MetricCollection):
-    def __init__(self):
-        ce_no_bond = NoBondCE(0)
-        ce_SI = SingleCE(1)
-        ce_DO = DoubleCE(2)
-        ce_TR = TripleCE(3)
-        ce_AR = AromaticCE(4)
-        super().__init__([ce_no_bond, ce_SI, ce_DO, ce_TR, ce_AR])
-
-
-class TrainMolecularMetricsDiscrete(nn.Module):
-    def __init__(self, dataset_infos):
-        super().__init__()
-        self.train_atom_metrics = AtomMetricsCE(dataset_infos=dataset_infos)
-        self.train_bond_metrics = BondMetricsCE()
-
-    def forward(self, masked_pred_X, masked_pred_E, true_X, true_E, log: bool):
-        self.train_atom_metrics(masked_pred_X, true_X)
-        self.train_bond_metrics(masked_pred_E, true_E)
-        if log:
-            to_log = {}
-            for key, val in self.train_atom_metrics.compute().items():
-                to_log['train/' + key] = val.item()
-            for key, val in self.train_bond_metrics.compute().items():
-                to_log['train/' + key] = val.item()
-
-            wandb.log(to_log, commit=False)
-
-    def reset(self):
-        for metric in [self.train_atom_metrics, self.train_bond_metrics]:
-            metric.reset()
-
-    def log_epoch_metrics(self, current_epoch):
-        epoch_atom_metrics = self.train_atom_metrics.compute()
-        epoch_bond_metrics = self.train_bond_metrics.compute()
-
-        to_log = {}
-        for key, val in epoch_atom_metrics.items():
-            to_log['train_epoch/' + key] = val.item()
-        for key, val in epoch_bond_metrics.items():
-            to_log['train_epoch/' + key] = val.item()
-        wandb.log(to_log, commit=False)
-
-        for key, val in epoch_atom_metrics.items():
-            epoch_atom_metrics[key] = val.item()
-        for key, val in epoch_bond_metrics.items():
-            epoch_bond_metrics[key] = val.item()
-
-        print(f"Epoch {current_epoch}: {epoch_atom_metrics} -- {epoch_bond_metrics}")
 
 
 if __name__ == '__main__':
