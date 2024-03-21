@@ -46,11 +46,7 @@ def get_resume_adaptive(cfg, model_kwargs):
     root_dir = current_path.split('outputs')[0]
 
     resume_path = os.path.join(root_dir, cfg.general.resume)
-
-    # if cfg.model.type == 'discrete':
     model = DiscreteDenoisingDiffusion.load_from_checkpoint(resume_path, **model_kwargs)
-    # else:
-        # model = LiftedDenoisingDiffusion.load_from_checkpoint(resume_path, **model_kwargs)
     new_cfg = model.cfg
 
     for category in cfg:
@@ -75,16 +71,10 @@ def main(cfg: DictConfig):
         from analysis.visualization import NonMolecularVisualization
 
         datamodule = SpectreGraphDataModule(cfg)
-        # if dataset_config['name'] == 'sbm':
-        #     sampling_metrics = SBMSamplingMetrics(datamodule)
-        # elif dataset_config['name'] == 'comm20':
         sampling_metrics = Comm20SamplingMetrics(datamodule)
-        # else:
-        #     sampling_metrics = PlanarSamplingMetrics(datamodule)
 
         dataset_infos = SpectreDatasetInfos(datamodule, dataset_config)
         train_metrics = TrainAbstractMetricsDiscrete()
-        # if cfg.model.type == 'discrete' else TrainAbstractMetrics()
         visualization_tools = NonMolecularVisualization()
 
         if cfg.model.type == 'discrete' and cfg.model.extra_features is not None:
@@ -100,43 +90,30 @@ def main(cfg: DictConfig):
                         'sampling_metrics': sampling_metrics, 'visualization_tools': visualization_tools,
                         'extra_features': extra_features, 'domain_features': domain_features}
 
-    # if dataset_config["name"] in ['qm9', 'guacamol', 'moses']:
-    #     from metrics.molecular_metrics import TrainMolecularMetrics, SamplingMolecularMetrics
-    #     from metrics.molecular_metrics_discrete import TrainMolecularMetricsDiscrete
-    #     from diffusion.extra_features_molecular import ExtraMolecularFeatures
-    #     from analysis.visualization import MolecularVisualization
+    elif dataset_config["name"] == 'shader':
+        from datasets.shader_dataset import ShaderGraphDataModule, ShaderDatasetInfos
+        from analysis.spectre_utils import ShaderSamplingMetrics
+        from analysis.visualization import NonMolecularVisualization
 
-    #     if dataset_config["name"] == 'qm9':
-    #         from datasets import qm9_dataset
-    #         datamodule = qm9_dataset.QM9DataModule(cfg)
-    #         dataset_infos = qm9_dataset.QM9infos(datamodule=datamodule, cfg=cfg)
-    #         train_smiles = qm9_dataset.get_train_smiles(cfg=cfg, train_dataloader=datamodule.train_dataloader(),
-    #                                                     dataset_infos=dataset_infos, evaluate_dataset=False)
-    #     else:
-    #         raise ValueError("Dataset not implemented")
+        datamodule = ShaderGraphDataModule(cfg)
+        sampling_metrics = ShaderSamplingMetrics(datamodule)
 
-    #     if cfg.model.type == 'discrete' and cfg.model.extra_features is not None:
-    #         extra_features = ExtraFeatures(cfg.model.extra_features, dataset_info=dataset_infos)
-    #         domain_features = ExtraMolecularFeatures(dataset_infos=dataset_infos)
-    #     else:
-    #         extra_features = DummyExtraFeatures()
-    #         domain_features = DummyExtraFeatures()
+        dataset_infos = ShaderDatasetInfos(datamodule, dataset_config)
+        train_metrics = TrainAbstractMetricsDiscrete()
+        visualization_tools = NonMolecularVisualization()
 
-    #     dataset_infos.compute_input_output_dims(datamodule=datamodule, extra_features=extra_features,
-    #                                             domain_features=domain_features)
+        if cfg.model.type == 'discrete' and cfg.model.extra_features is not None:
+            extra_features = ExtraFeatures(cfg.model.extra_features, dataset_info=dataset_infos)
+        else:
+            extra_features = DummyExtraFeatures()
+        domain_features = DummyExtraFeatures()
 
-    #     # if cfg.model.type == 'discrete':
-    #     train_metrics = TrainMolecularMetricsDiscrete(dataset_infos)
-    #     # else:
-    #         # train_metrics = TrainMolecularMetrics(dataset_infos)
+        dataset_infos.compute_input_output_dims(datamodule=datamodule, extra_features=extra_features,
+                                                domain_features=domain_features)
 
-    #     # We do not evaluate novelty during training
-    #     sampling_metrics = SamplingMolecularMetrics(dataset_infos, train_smiles)
-    #     visualization_tools = MolecularVisualization(cfg.dataset.remove_h, dataset_infos=dataset_infos)
-
-    #     model_kwargs = {'dataset_infos': dataset_infos, 'train_metrics': train_metrics,
-    #                     'sampling_metrics': sampling_metrics, 'visualization_tools': visualization_tools,
-    #                     'extra_features': extra_features, 'domain_features': domain_features}
+        model_kwargs = {'dataset_infos': dataset_infos, 'train_metrics': train_metrics,
+                        'sampling_metrics': sampling_metrics, 'visualization_tools': visualization_tools,
+                        'extra_features': extra_features, 'domain_features': domain_features}
     else:
         raise NotImplementedError("Unknown dataset {}".format(cfg["dataset"]))
 
@@ -150,11 +127,7 @@ def main(cfg: DictConfig):
         os.chdir(cfg.general.resume.split('checkpoints')[0])
 
     utils.create_folders(cfg)
-
-    # if cfg.model.type == 'discrete':
     model = DiscreteDenoisingDiffusion(cfg=cfg, **model_kwargs)
-    # else:
-    #     model = LiftedDenoisingDiffusion(cfg=cfg, **model_kwargs)
 
     callbacks = []
     if cfg.train.save_model:
@@ -176,13 +149,6 @@ def main(cfg: DictConfig):
     if name == 'debug':
         print("[WARNING]: Run is called 'debug' -- it will run with fast_dev_run. ")
 
-        # if cfg.general.gpus > 0:  # Check if user intends to use a GPU
-        #     if torch.backends.mps.is_available():
-        #         return True  # Use MPS if available
-        #     else:
-        #         print("MPS device not found. Falling back to CPU.")
-          # Use CPU otherwise
-    # use_gpu = cfg.general.gpus > 0 and torch.cuda.is_available()
     trainer = Trainer(gradient_clip_val=cfg.train.clip_grad,
                     #   strategy="ddp_find_unused_parameters_true",  # Needed to load old checkpoints
                       accelerator='cpu', 

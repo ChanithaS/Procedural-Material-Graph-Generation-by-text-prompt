@@ -563,7 +563,15 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
             n = n_nodes[i]
             atom_types = X[i, :n].cpu()
             edge_types = E[i, :n, :n].cpu()
+
+            extra_features = sampled_s.y[i]
+            print("Extra Features for Molecule ", i)
+            print(extra_features)
+            print(atom_types)
+
             molecule_list.append([atom_types, edge_types])
+
+        
 
         # Visualize chains
         if self.visualization_tools is not None:
@@ -589,6 +597,9 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
             self.visualization_tools.visualize(result_path, molecule_list, save_final)
             self.print("Done.")
 
+        self.print("dfgdfghdfgdfgdfgdfgdfgdfgdfgdfg.")  
+        self.print(molecule_list)
+        
         return molecule_list
 
     def sample_p_zs_given_zt(self, s, t, X_t, E_t, y_t, node_mask):
