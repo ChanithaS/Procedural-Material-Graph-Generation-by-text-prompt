@@ -88,6 +88,8 @@ class SpectreGraphDataset(InMemoryDataset):
             edge_attr = torch.zeros(edge_index.shape[-1], 2, dtype=torch.float)
             edge_attr[:, 1] = 1
             num_nodes = n * torch.ones(1, dtype=torch.long)
+            print("this is y omg sdfsfsdfsdfsdfsdfsdfsdf")
+            print(y)
             data = torch_geometric.data.Data(x=X, edge_index=edge_index, edge_attr=edge_attr,
                                              y=y, n_nodes=num_nodes)
             data_list.append(data)

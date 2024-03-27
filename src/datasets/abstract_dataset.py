@@ -70,29 +70,29 @@ class AbstractDataModule(LightningDataset):
 
         d = d / d.sum()
         return d
-    def edge_counts(self):
-        edge_type_counts = None
-        for data in self.train_dataloader():
-            # Check if the data object has the edge_attr attribute and it is not None
-            if hasattr(data, 'edge_attr') and data.edge_attr is not None:
-                if edge_type_counts is None:
-                    # Initialize the edge_type_counts tensor based on the first non-None edge_attr encountered
-                    num_edge_features = data.edge_attr.shape[1]
-                    edge_type_counts = torch.zeros(num_edge_features, dtype=torch.float)
+    # def edge_counts(self):
+    #     edge_type_counts = None
+    #     for data in self.train_dataloader():
+    #         # Check if the data object has the edge_attr attribute and it is not None
+    #         if hasattr(data, 'edge_attr') and data.edge_attr is not None:
+    #             if edge_type_counts is None:
+    #                 # Initialize the edge_type_counts tensor based on the first non-None edge_attr encountered
+    #                 num_edge_features = data.edge_attr.shape[1]
+    #                 edge_type_counts = torch.zeros(num_edge_features, dtype=torch.float)
                 
-                # Accumulate edge attribute statistics
-                edge_type_counts += data.edge_attr.sum(dim=0)
-            else:
-                # Handle graphs without edge attributes
-                # This might simply be counting the number of edges if that's useful for your application
-                if edge_type_counts is None:
-                    # Initialize as a single-element tensor if we're just counting edges
-                    edge_type_counts = torch.tensor([0.], dtype=torch.float)
-                edge_type_counts[0] += data.edge_index.size(1)  # Assuming edge_index is present and denotes edge connections
+    #             # Accumulate edge attribute statistics
+    #             edge_type_counts += data.edge_attr.sum(dim=0)
+    #         else:
+    #             # Handle graphs without edge attributes
+    #             # This might simply be counting the number of edges if that's useful for your application
+    #             if edge_type_counts is None:
+    #                 # Initialize as a single-element tensor if we're just counting edges
+    #                 edge_type_counts = torch.tensor([0.], dtype=torch.float)
+    #             edge_type_counts[0] += data.edge_index.size(1)  # Assuming edge_index is present and denotes edge connections
 
-        if edge_type_counts is not None:
-            edge_type_counts = edge_type_counts / edge_type_counts.sum()
-        return edge_type_counts
+    #     if edge_type_counts is not None:
+    #         edge_type_counts = edge_type_counts / edge_type_counts.sum()
+    #     return edge_type_counts
 
 
 class MolecularDataModule(AbstractDataModule):
@@ -124,6 +124,7 @@ class AbstractDatasetInfos:
 
     def compute_input_output_dims(self, datamodule, extra_features, domain_features):
         example_batch = next(iter(datamodule.train_dataloader()))
+        self.print(f"Before to_dense: x.shape: {example_batch.x.shape}, edge_index.shape: {example_batch.edge_index.shape}, edge_attr.shape: {example_batch.edge_attr.shape}")
         ex_dense, node_mask = utils.to_dense(example_batch.x, example_batch.edge_index, example_batch.edge_attr,
                                              example_batch.batch)
         example_data = {'X_t': ex_dense.X, 'E_t': ex_dense.E, 'y_t': example_batch['y'], 'node_mask': node_mask}

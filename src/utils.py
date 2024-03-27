@@ -127,6 +127,7 @@ class PlaceHolder:
         else:
             self.X = self.X * x_mask
             self.E = self.E * e_mask1 * e_mask2
+            print("Is E symmetric?", torch.allclose(self.E, self.E.t()))
             assert torch.allclose(self.E, torch.transpose(self.E, 1, 2))
         return self
 

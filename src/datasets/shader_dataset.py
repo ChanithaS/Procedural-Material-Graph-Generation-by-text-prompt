@@ -79,16 +79,24 @@ class ShaderGraphDataset(InMemoryDataset):
         data_list = []
         for graph_data in raw_dataset:  # Access the correct split
             adj_matrix = graph_data['adj_matrix']
+            print("hello")
+            print(adj_matrix)
             node_features = graph_data['node_features']
             node_types = graph_data['node_types']
-            edge_attr = graph_data.get('edge_attr', None)
+            # edge_attr = graph_data.get('edge_attr', None)
             # edge_index = graph_data["edge_index"]
-            num_nodes = graph_data['no_of_nodes']
+            # num_nodes = graph_data['no_of_nodes']
+            y = torch.zeros([1, 0]).float()
 
             # num_nodes = node_features.size(0)
-
+            n = adj_matrix.shape[-1]
+            X = torch.ones(n, 1, dtype=torch.float)
+            num_nodes = n * torch.ones(1, dtype=torch.long)
             edge_index, _ = torch_geometric.utils.dense_to_sparse(adj_matrix)
-            data = torch_geometric.data.Data(x=node_features, edge_index=edge_index, edge_attr=edge_attr, n_nodes=num_nodes)
+            edge_attr = torch.zeros(edge_index.shape[-1], 2, dtype=torch.float)
+            edge_attr[:, 1] = 1
+
+            data = torch_geometric.data.Data(x=X, edge_index=edge_index, edge_attr=edge_attr, y=y, n_nodes=num_nodes)
 
             if self.pre_filter is not None and not self.pre_filter(data):
                 continue
@@ -127,7 +135,7 @@ class ShaderDatasetInfos(AbstractDatasetInfos):
         self.datamodule = datamodule
         self.name = 'shader_graphs'
         # Extract maximum node count
-        self.n_nodes = max(d.n_nodes for d in datamodule.train_dataset) 
+        self.n_nodes = self.datamodule.node_counts()
 
         # Collect unique node types
         self.node_types = torch.unique(
