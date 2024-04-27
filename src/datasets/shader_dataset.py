@@ -3,100 +3,96 @@ import pathlib
 
 import torch
 from torch.utils.data import random_split
+import torch.nn.functional as F
 import torch_geometric.utils
-from torch_geometric.data import InMemoryDataset, download_url
+from torch_geometric.data import InMemoryDataset
+import pandas as pd
+import ast
 
 from src.datasets.abstract_dataset import AbstractDataModule, AbstractDatasetInfos
 
 class ShaderGraphDataset(InMemoryDataset):
-    def __init__(self, split, root, transform=None, pre_transform=None, pre_filter=None):
+    def __init__(self, dataset_name, split, root, transform=None, pre_transform=None, pre_filter=None):
+        self.dataset_name = dataset_name
         self.split = split
+        self.num_graphs = 95
         super().__init__(root, transform, pre_transform, pre_filter)
-        # Load dataset before splitting
-        self.dataset_path = '/Users/chanithas/Desktop/fyp/Procedural-Material-Graph-Generation-by-text-prompt/data/shader/my_graph_data.pt'  
-        self.all_data = torch.load(self.dataset_path)
-
-        self.splitting()  # Perform splitting
         self.data, self.slices = torch.load(self.processed_paths[0])
 
     @property
     def raw_file_names(self):
-        return ['train.pt', 'val.pt', 'test.pt']
+        return ['train.csv', 'val.csv', 'test.csv']
 
     @property
     def processed_file_names(self):
-        # Assuming the processed files are named according to their split.
-        return [f'{self.split}.pt']
+            return [self.split + '.csv']
 
-    def splitting(self):
-        # # Path to your dataset file
-        # dataset_path = '/Users/chanithas/Desktop/fyp/Procedural-Material-Graph-Generation-by-text-prompt/data/shader/raw/my_graph_data.pt'
-        
-        # # Loading the dataset from the .pt file
-        # all_data = torch.load(dataset_path)
-        
-        # Splitting the data (assuming all_data is a list of Data objects or a similar structure)
-        # You might need to adjust the logic based on the actual structure of your dataset
-        num_graphs = len(self.all_data)
-        
+    def download(self):
+        file_path = os.path.join(self.raw_dir, 'shader_dataset.csv')
+        df = pd.read_csv(file_path)
+
         g_cpu = torch.Generator()
         g_cpu.manual_seed(0)
 
-        # Define split sizes (for example 70% train, 15% val, 15% test)
-        test_len = int(round(num_graphs * 0.2))
-        train_len = int(round((num_graphs - test_len) * 0.8))
-        val_len = num_graphs - train_len - test_len
-        indices = torch.randperm(num_graphs, generator=g_cpu)
+        test_len = int(round(self.num_graphs * 0.2))
+        train_len = int(round((self.num_graphs - test_len) * 0.8))
+        val_len = self.num_graphs - train_len - test_len
+        indices = torch.randperm(self.num_graphs, generator=g_cpu)
         print(f'Dataset sizes: train {train_len}, val {val_len}, test {test_len}')
-
-        # Splitting indices for each dataset
         train_indices = indices[:train_len]
         val_indices = indices[train_len:train_len + val_len]
         test_indices = indices[train_len + val_len:]
-        
-        train_data = []
-        val_data = []
-        test_data = []
 
-        for i, adj in enumerate(self.all_data):
-            if i in train_indices:
-                train_data.append(adj)
-            elif i in val_indices:
-                val_data.append(adj)
-            elif i in test_indices:
-                test_data.append(adj)
-            else:
-                raise ValueError(f'Index {i} not in any split')
+        # Splitting data into train, validation, and test sets
+        train_data = df.iloc[train_indices]
+        val_data = df.iloc[val_indices]
+        test_data = df.iloc[test_indices]
 
-        torch.save(train_data, self.raw_paths[0])
-        torch.save(val_data, self.raw_paths[1])
-        torch.save(test_data, self.raw_paths[2])
+    
+        train_data.to_csv(os.path.join(self.raw_paths[0]), index=False)
+        val_data.to_csv(os.path.join(self.raw_paths[1]), index=False)
+        test_data.to_csv(os.path.join(self.raw_paths[2]), index=False)
+
 
     def process(self):
-        # Assuming 'adj_matrix', 'node_features', etc. are in each 'graph_data'
         file_idx = {'train': 0, 'val': 1, 'test': 2}
-        raw_dataset = torch.load(self.raw_paths[file_idx[self.split]])
+        raw_dataset = pd.read_csv(self.raw_paths[file_idx[self.split]])
+
+        edge_types_all = [[0, 1], [3, 0], [0, 0], [0, 6], [1, 0], [2, 6], [2, 7], [2, 0], [0, 2], [0, 7], [2, 2], [0, 22], [2, 17], [2, 9], [2, 1], [4, 1], [0, 16], [0, 4], [4, 7], [0, 3], [1, 6], [5, 1], [0, 9], [1, 7], [0, 17], [1, 4], [1, 1], [12, 0], [6, 1], [7, 0], [0, 12], [0, 21], [0, 18], [6, 0], [5, 0], [2, 4], [1, 2], [3, 10], [3, 1], [0, 15], [0, 23], [2, 18], [0, 5], [0, 10], [8, 0], [2, 5], [0, 8], [0, 19], [0, 20], [4, 0], [3, 7], [2, 19], [11, 0]]
+        node_types_all = ['ShaderNodeValToRGB', 'ShaderNodeTexNoise', 'ShaderNodeMix', 'ShaderNodeDisplacement', 'ShaderNodeBsdfRefraction', 'ShaderNodeBsdfTransparent', 'ShaderNodeMixShader', 'ShaderNodeTexCoord', 'ShaderNodeOutputMaterial', 'ShaderNodeTexMusgrave', 'ShaderNodeTexVoronoi', 'ShaderNodeMapping', 'ShaderNodeTexWave', 'ShaderNodeBump', 'ShaderNodeInvert', 'ShaderNodeBsdfPrincipled', 'ShaderNodeRGB', 'ShaderNodeValue', 'ShaderNodeNewGeometry', 'ShaderNodeVectorMath', 'ShaderNodeGamma', 'ShaderNodeLightPath', 'ShaderNodeBsdfDiffuse', 'ShaderNodeMath', 'ShaderNodeBsdfAnisotropic', 'ShaderNodeFresnel', 'ShaderNodeLayerWeight', 'ShaderNodeRGBCurve', 'ShaderNodeBsdfGlass', 'ShaderNodeSeparateXYZ', 'ShaderNodeMapRange', 'ShaderNodeHueSaturation', 'ShaderNodeAddShader', 'ShaderNodeEmission', 'ShaderNodeVolumeAbsorption', 'ShaderNodeBsdfGlossy', 'ShaderNodeRGBToBW', 'ShaderNodeTexGradient', 'ShaderNodeBrightContrast', 'ShaderNodeSeparateColor', 'ShaderNodeAmbientOcclusion', 'ShaderNodeObjectInfo', 'ShaderNodeVectorRotate', 'ShaderNodeVolumePrincipled', 'ShaderNodeVolumeInfo', 'ShaderNodeTexBrick', 'ShaderNodeVectorCurve', 'ShaderNodeCombineXYZ', 'ShaderNodeEeveeSpecular', 'ShaderNodeWireframe', 'ShaderNodeBsdfTranslucent', 'ShaderNodeBevel', 'ShaderNodeShaderToRGB', 'ShaderNodeCameraData', 'ShaderNodeNormalMap', 'ShaderNodeTexMagic', 'ShaderNodeTexChecker', 'ShaderNodeBsdfToon', 'ShaderNodeVertexColor']
         data_list = []
-        for graph_data in raw_dataset:  # Access the correct split
-            adj_matrix = graph_data['adj_matrix']
-            print("hello")
-            print(adj_matrix)
-            node_features = graph_data['node_features']
-            node_types = graph_data['node_types']
-            # edge_attr = graph_data.get('edge_attr', None)
-            # edge_index = graph_data["edge_index"]
-            # num_nodes = graph_data['no_of_nodes']
-            y = torch.zeros([1, 0]).float()
+        for idx, row in raw_dataset.iterrows():
+            # Assuming the data has columns 'adjacency', 'n_nodes'
+            type_idx_str = row['Nodes']
+            type_idx = ast.literal_eval(type_idx_str)
+            N = len(type_idx)
 
-            # num_nodes = node_features.size(0)
-            n = adj_matrix.shape[-1]
-            X = torch.ones(n, 1, dtype=torch.float)
-            num_nodes = n * torch.ones(1, dtype=torch.long)
-            edge_index, _ = torch_geometric.utils.dense_to_sparse(adj_matrix)
-            edge_attr = torch.zeros(edge_index.shape[-1], 2, dtype=torch.float)
-            edge_attr[:, 1] = 1
+            edge_index_csv = row['Edges']
+            edge_index_list = ast.literal_eval(edge_index_csv)
+            edge_index = torch.tensor(edge_index_list, dtype=torch.long)
 
-            data = torch_geometric.data.Data(x=X, edge_index=edge_index, edge_attr=edge_attr, y=y, n_nodes=num_nodes)
+            edge_type_csv = row['Edge_types']
+            edge_type_list = ast.literal_eval(edge_type_csv)
+            edge_type_list_doubled = []
+            for num in edge_type_list:
+                edge_type_list_doubled.extend([num, num])
+            edge_type = torch.tensor(edge_type_list_doubled, dtype=torch.long)
+
+            edge_attr = F.one_hot(edge_type, num_classes=len(edge_types_all)+1).to(torch.float)
+
+            print("Size of the bonds using .size() method:", len(edge_types_all))
+            print("Size of the edge_type using .size() method:", edge_type.size())
+            print("Size of the edge_index using .size() method:", edge_index.size())
+            print("Size of the edge_attr using .size() method:", edge_attr.size())
+
+            perm = (edge_index[0] * N + edge_index[1]).argsort()
+            edge_index = edge_index[:, perm]
+            edge_attr = edge_attr[perm]
+
+            x = F.one_hot(torch.tensor(type_idx), num_classes=len(node_types_all)).float()
+            y = torch.zeros((1, 0), dtype=torch.float)
+
+            data = torch_geometric.data.Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y, idx=idx)
 
             if self.pre_filter is not None and not self.pre_filter(data):
                 continue
@@ -104,27 +100,30 @@ class ShaderGraphDataset(InMemoryDataset):
                 data = self.pre_transform(data)
 
             data_list.append(data)
-
+        
+        # Save processed data
         torch.save(self.collate(data_list), self.processed_paths[0])
 
 
 
 class ShaderGraphDataModule(AbstractDataModule):
-    def __init__(self, cfg, n_graphs=200):
+    def __init__(self, cfg, n_graphs=95):
         self.cfg = cfg
         self.datadir = cfg.dataset.datadir
         base_path = pathlib.Path(os.path.realpath(__file__)).parents[2]
         root_path = os.path.join(base_path, self.datadir)
 
-        self.datasets = {
-            'train': ShaderGraphDataset(split='train', root=root_path),
-            'val': ShaderGraphDataset(split='val', root=root_path),
-            'test': ShaderGraphDataset(split='test', root=root_path)
-        }
+
+        datasets = {'train': ShaderGraphDataset(dataset_name=self.cfg.dataset.name,
+                                                 split='train', root=root_path),
+                    'val': ShaderGraphDataset(dataset_name=self.cfg.dataset.name,
+                                        split='val', root=root_path),
+                    'test': ShaderGraphDataset(dataset_name=self.cfg.dataset.name,
+                                        split='test', root=root_path)}
         # print(f'Dataset sizes: train {train_len}, val {val_len}, test {test_len}')
 
-        super().__init__(cfg, self.datasets)
-        self.inner = self.datasets['train'] 
+        super().__init__(cfg, datasets)
+        self.inner = self.train_dataset
 
     def __getitem__(self, item):
         return self.inner[item]
@@ -133,26 +132,8 @@ class ShaderGraphDataModule(AbstractDataModule):
 class ShaderDatasetInfos(AbstractDatasetInfos):
     def __init__(self, datamodule, dataset_config):
         self.datamodule = datamodule
-        self.name = 'shader_graphs'
-        # Extract maximum node count
+        self.name = 'nx_graphs'
         self.n_nodes = self.datamodule.node_counts()
-
-        # Collect unique node types
-        self.node_types = torch.unique(
-            torch.cat([d.x[:, 0] for d in datamodule.train_dataset])
-        ).long()  # Assuming first feature in 'x' indicates node type
-
-        # Consider edge types if relevant
-        if datamodule.train_dataset[0].edge_attr is not None:
-            self.edge_types = torch.unique(
-                torch.cat([d.edge_attr for d in datamodule.train_dataset])
-            ).long()
-        else:
-            self.edge_types = torch.tensor([1])
+        self.node_types = self.datamodule.node_types()              # There are no node types
+        self.edge_types = self.datamodule.edge_counts()
         super().complete_infos(self.n_nodes, self.node_types)
-
-# self.n_nodes: The maximum number of nodes found in any single graph within the whole dataset.
-
-# self.node_types:  A collection of all unique node types that exist across all graphs in the dataset.
-
-# self.edge_types:  Similar to node types, this represents all unique edge types found across graphs in the dataset (if edge attributes are present).

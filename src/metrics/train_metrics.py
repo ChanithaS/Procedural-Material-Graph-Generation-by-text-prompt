@@ -51,7 +51,7 @@ class TrainLoss(nn.Module):
         epoch_y_mse = self.train_y_mse.compute() if self.train_y_mse.total > 0 else -1
 
         to_log = {"train_epoch/epoch_X_mse": epoch_node_mse,
-                  "train_epoch/epoch_E_mse": epoch_edge_mse,
+                  "train_epoch/epoch_E_mse": _edge_mse,
                   "train_epoch/epoch_y_mse": epoch_y_mse}
         if wandb.run:
             wandb.log(to_log)

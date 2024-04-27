@@ -661,30 +661,6 @@ class LiftedDenoisingDiffusion(pl.LightningModule):
             edge_types = E[i, :n, :n].cpu()
             molecule_list.append([atom_types, edge_types])
 
-        # Visualize chains
-        if self.visualization_tools is not None:
-            print('Visualizing chains...')
-            current_path = os.getcwd()
-            num_molecules = chain_X.size(1)       # number of molecules
-            for i in range(num_molecules):
-                result_path = os.path.join(current_path, f'chains/{self.cfg.general.name}/'
-                                                         f'epoch{self.current_epoch}/'
-                                                         f'chains/molecule_{batch_id + i}')
-                if not os.path.exists(result_path):
-                    os.makedirs(result_path)
-                    _ = self.visualization_tools.visualize_chain(result_path,
-                                                                 chain_X[:, i, :].numpy(),
-                                                                 chain_E[:, i, :].numpy())
-                print('\r{}/{} complete'.format(i+1, num_molecules), end='', flush=True)
-
-            # Visualize the final molecules
-            print("Visualizing molecules...")
-            current_path = os.getcwd()
-            result_path = os.path.join(current_path,
-                                       f'graphs/{self.name}/epoch{self.current_epoch}_b{batch_id}/')
-            self.visualization_tools.visualize(result_path, molecule_list, save_final, log='graph')
-            print("Done.")
-
         return molecule_list
 
     def sample_discrete_graph_given_z0(self, X_0, E_0, y_0, node_mask):

@@ -5,17 +5,18 @@ wandb: 'online'             # online | offline | disabled
 gpus: 1                     # Multi-gpu is not implemented on this branch
 
 
-resume: '/Users/chanithas/Desktop/fyp/Procedural-Material-Graph-Generation-by-text-prompt/outputs/2024-03-26/03-43-16-graph-tf-model/checkpoints/graph-tf-model_resume/last.ckpt'             # If resume, path to ckpt file from outputs directory in main directory
+resume: '/Users/chanithas/Desktop/fyp/finall-digress-testing/Procedural-Material-Graph-Generation-by-text-prompt/outputs/2024-04-09/last-v1-copy.ckpt'           # If resume, path to ckpt file from outputs directory in main directory
+# '/Users/chanithas/Desktop/fyp/finall-digress-testing/Procedural-Material-Graph-Generation-by-text-prompt/outputs/2024-04-07/22-28-37-graph-tf-model/checkpoints/graph-tf-model/last-v1.ckpt'
 test_only: null         # Use absolute path
 
 check_val_every_n_epochs: 5
 sample_every_val: 4
 val_check_interval: null
-samples_to_generate: 512       # We advise to set it to 2 x batch_size maximum
-samples_to_save: 20
+samples_to_generate: 30       # We advise to set it to 2 x batch_size maximum
+samples_to_save: 10
 chains_to_save: 1
-log_every_steps: 50
-number_chain_steps: 50        # Number of frames in each gif
+log_every_steps: 10
+number_chain_steps: 10        # Number of frames in each gif
 
 # final_model_samples_to_generate: 100
 # final_model_samples_to_save: 30

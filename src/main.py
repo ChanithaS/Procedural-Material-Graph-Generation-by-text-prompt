@@ -16,7 +16,7 @@ from metrics.abstract_metrics import TrainAbstractMetricsDiscrete, TrainAbstract
 
 from diffusion_model import LiftedDenoisingDiffusion
 from diffusion_model_discrete import DiscreteDenoisingDiffusion
-from diffusion.extra_features import DummyExtraFeatures, ExtraFeatures
+from diffusion.extra_features import DummyExtraFeatures
 
 
 warnings.filterwarnings("ignore", category=PossibleUserWarning)
@@ -26,11 +26,8 @@ def get_resume(cfg, model_kwargs):
     """ Resumes a run. It loads previous config without allowing to update keys (used for testing). """
     saved_cfg = cfg.copy()
     name = cfg.general.name + '_resume'
-    resume = '/Users/chanithas/Desktop/fyp/Procedural-Material-Graph-Generation-by-text-prompt/outputs/2024-03-26/03-43-16-graph-tf-model/checkpoints/graph-tf-model_resume/last.ckpt'
-    # if cfg.model.type == 'discrete':
+    resume = cfg.general.test_only
     model = DiscreteDenoisingDiffusion.load_from_checkpoint(resume, **model_kwargs)
-    # else:
-        # model = LiftedDenoisingDiffusion.load_from_checkpoint(resume, **model_kwargs)
     cfg = model.cfg
     cfg.general.test_only = resume
     cfg.general.name = name
@@ -44,8 +41,9 @@ def get_resume_adaptive(cfg, model_kwargs):
     # Fetch path to this file to get base path
     current_path = os.path.dirname(os.path.realpath(__file__))
     root_dir = current_path.split('outputs')[0]
+    # resume_path = os.path.join(root_dir, cfg.general.resume)
+    resume_path = '/Users/chanithas/Desktop/fyp/finall-digress-testing/Procedural-Material-Graph-Generation-by-text-prompt/outputs/2024-04-09/last-v1-copy.ckpt'
 
-    resume_path = '/Users/chanithas/Desktop/fyp/Procedural-Material-Graph-Generation-by-text-prompt/outputs/2024-03-26/03-43-16-graph-tf-model/checkpoints/graph-tf-model_resume/last.ckpt'
     model = DiscreteDenoisingDiffusion.load_from_checkpoint(resume_path, **model_kwargs)
     new_cfg = model.cfg
 
@@ -59,68 +57,22 @@ def get_resume_adaptive(cfg, model_kwargs):
     new_cfg = utils.update_config_with_new_keys(new_cfg, saved_cfg)
     return new_cfg, model
 
-# def generation(cfg, model_kwargs):
-#     model_path = '/Users/chanithas/Desktop/fyp/Procedural-Material-Graph-Generation-by-text-prompt/outputs/2024-03-26/03-43-16-graph-tf-model/checkpoints/graph-tf-model_resume/epoch=99.ckpt'
-#     model = DiscreteDenoisingDiffusion.load_from_checkpoint(checkpoint_path=model_path, model_kwargs = model_kwargs)
-#     new_cfg = model.cfg
-
-#     for category in cfg:
-#         for arg in cfg[category]:
-#             new_cfg[category][arg] = cfg[category][arg]
-
-#     new_cfg.general.resume = model_path
-#     new_cfg.general.name = new_cfg.general.name + '_resume'
-
-#     y = torch.tensor([], size=(1, 0))
-#     # generated_graphs = model.generate_from_y(y=y, batch_size=10)
-#     print("priting graphs")
-#     # print(generated_graphs)
-#     return new_cfg
 
 @hydra.main(version_base='1.3', config_path='../configs', config_name='config')
 def main(cfg: DictConfig):
     dataset_config = cfg["dataset"]
-
-    if dataset_config["name"] in ['sbm', 'comm20', 'planar']:
-        from datasets.spectre_dataset import SpectreGraphDataModule, SpectreDatasetInfos
-        from analysis.spectre_utils import PlanarSamplingMetrics, SBMSamplingMetrics, Comm20SamplingMetrics
-        from analysis.visualization import NonMolecularVisualization
-
-        datamodule = SpectreGraphDataModule(cfg)
-        sampling_metrics = Comm20SamplingMetrics(datamodule)
-
-        dataset_infos = SpectreDatasetInfos(datamodule, dataset_config)
-        train_metrics = TrainAbstractMetricsDiscrete()
-        visualization_tools = None
-
-        if cfg.model.type == 'discrete' and cfg.model.extra_features is not None:
-            extra_features = ExtraFeatures(cfg.model.extra_features, dataset_info=dataset_infos)
-        else:
-            extra_features = DummyExtraFeatures()
-        domain_features = DummyExtraFeatures()
-
-        dataset_infos.compute_input_output_dims(datamodule=datamodule, extra_features=extra_features,
-                                                domain_features=domain_features)
-
-        model_kwargs = {'dataset_infos': dataset_infos, 'train_metrics': train_metrics,
-                        'sampling_metrics': sampling_metrics, 'visualization_tools': visualization_tools,
-                        'extra_features': extra_features, 'domain_features': domain_features}
-
-    elif dataset_config["name"] == 'shader':
+        
+    if dataset_config["name"] == "shader":
         from datasets.shader_dataset import ShaderGraphDataModule, ShaderDatasetInfos
         from analysis.spectre_utils import ShaderSamplingMetrics
-        from analysis.visualization import NonMolecularVisualization
 
         datamodule = ShaderGraphDataModule(cfg)
         sampling_metrics = ShaderSamplingMetrics(datamodule)
 
         dataset_infos = ShaderDatasetInfos(datamodule, dataset_config)
         train_metrics = TrainAbstractMetricsDiscrete()
-        visualization_tools = NonMolecularVisualization()
+        visualization_tools = None
 
-        # if cfg.model.type == 'discrete' and cfg.model.extra_features is not None:
-        #     extra_features = ExtraFeatures(cfg.model.extra_features, dataset_info=dataset_infos)
-        # else:
         extra_features = DummyExtraFeatures()
         domain_features = DummyExtraFeatures()
 
@@ -130,6 +82,7 @@ def main(cfg: DictConfig):
         model_kwargs = {'dataset_infos': dataset_infos, 'train_metrics': train_metrics,
                         'sampling_metrics': sampling_metrics, 'visualization_tools': visualization_tools,
                         'extra_features': extra_features, 'domain_features': domain_features}
+        
     else:
         raise NotImplementedError("Unknown dataset {}".format(cfg["dataset"]))
 

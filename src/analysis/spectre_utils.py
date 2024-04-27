@@ -745,9 +745,11 @@ class SpectreSamplingMetrics(nn.Module):
         self.metrics_list = metrics_list
 
     def loader_to_nx(self, loader):
+        print(loader)
         networkx_graphs = []
         for i, batch in enumerate(loader):
             data_list = batch.to_data_list()
+            print(data_list)
             for j, data in enumerate(data_list):
                 networkx_graphs.append(to_networkx(data, node_attrs=None, edge_attrs=None, to_undirected=True,
                                                    remove_self_loops=True))
