@@ -133,7 +133,6 @@ dmypy.json
 .idea/
 __pycache__/
 dgd/configs/__pycache__/
-data/
 egnn/__pycache__/
 equivariant_diffusion/__pycache__/
 outputs/

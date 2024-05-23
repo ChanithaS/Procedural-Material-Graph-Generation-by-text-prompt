@@ -53,8 +53,8 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
         self.test_X_logp = SumExceptBatchMetric()
         self.test_E_logp = SumExceptBatchMetric()
 
-        self.train_metrics = train_metrics if train_metrics is not None else self.dummy_metrics
-        self.sampling_metrics = sampling_metrics if sampling_metrics is not None else self.dummy_metrics
+        self.train_metrics = train_metrics
+        self.sampling_metrics = sampling_metrics
 
         self.visualization_tools = visualization_tools
         self.extra_features = extra_features
@@ -103,12 +103,6 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
         self.number_chain_steps = cfg.general.number_chain_steps
         self.best_val_nll = 1e8
         self.val_counter = 0
-
-    @staticmethod
-    def dummy_metrics(*args, **kwargs):
-        # This is just a placeholder function that does nothing.
-        # It's used as a substitute for actual metric functions when they're not provided.
-        pass
 
     def training_step(self, data, i):
         if data.edge_index.numel() == 0:
@@ -665,51 +659,51 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
 
     # @torch.no_grad()
     # def generate_from_y(self, y, batch_size, num_nodes=None):
-    #     """
-    #     Generate graph structures (X, E) from given parameters y.
+        """
+        Generate graph structures (X, E) from given parameters y.
 
-    #     Parameters:
-    #     - y: Tensor, the input parameter based on which graphs are generated.
-    #     - batch_size: int, number of samples to generate.
-    #     - num_nodes: Optional[int], specifying a fixed number of nodes for each graph.
-    #     """
-    #     self.eval()  # Ensure the model is in evaluation mode.
+        Parameters:
+        - y: Tensor, the input parameter based on which graphs are generated.
+        - batch_size: int, number of samples to generate.
+        - num_nodes: Optional[int], specifying a fixed number of nodes for each graph.
+        """
+        self.eval()  # Ensure the model is in evaluation mode.
         
-    #     if num_nodes is None:
-    #         # If number of nodes is not fixed, sample from the model's node distribution.
-    #         n_nodes = self.node_dist.sample_n(batch_size, self.device)
-    #     else:
-    #         n_nodes = torch.full((batch_size,), num_nodes, dtype=torch.int, device=self.device)
+        if num_nodes is None:
+            # If number of nodes is not fixed, sample from the model's node distribution.
+            n_nodes = self.node_dist.sample_n(batch_size, self.device)
+        else:
+            n_nodes = torch.full((batch_size,), num_nodes, dtype=torch.int, device=self.device)
         
-    #     # Initialize masks based on the number of nodes.
-    #     n_max = torch.max(n_nodes).item()
-    #     node_mask = torch.arange(n_max, device=self.device).unsqueeze(0) < n_nodes.unsqueeze(1)
+        # Initialize masks based on the number of nodes.
+        n_max = torch.max(n_nodes).item()
+        node_mask = torch.arange(n_max, device=self.device).unsqueeze(0) < n_nodes.unsqueeze(1)
 
-    #     # Generate initial noisy states for X and E since they are not provided.
-    #     z_T = diffusion_utils.sample_discrete_feature_noise(limit_dist=self.limit_dist, node_mask=node_mask)
-    #     X, E = z_T.X, z_T.E
+        # Generate initial noisy states for X and E since they are not provided.
+        z_T = diffusion_utils.sample_discrete_feature_noise(limit_dist=self.limit_dist, node_mask=node_mask)
+        X, E = z_T.X, z_T.E
 
-    #     # Process given y to match batch size and dimensions expected by the model.
-    #     if y.dim() == 1:
-    #         y = y.unsqueeze(0).repeat(batch_size, 1)  # Assuming y is a vector, repeat it for each sample.
+        # Process given y to match batch size and dimensions expected by the model.
+        if y.dim() == 1:
+            y = y.unsqueeze(0).repeat(batch_size, 1)  # Assuming y is a vector, repeat it for each sample.
         
-    #     for t in reversed(range(0, self.T)):
-    #         # Convert time step t to normalized form.
-    #         t_norm = torch.full((batch_size, 1), t / self.T, device=self.device)
+        for t in reversed(range(0, self.T)):
+            # Convert time step t to normalized form.
+            t_norm = torch.full((batch_size, 1), t / self.T, device=self.device)
             
-    #         # Prepare noisy data, focusing on using the given y.
-    #         noisy_data = {'t': t_norm, 'X_t': X, 'E_t': E, 'y_t': y, 'node_mask': node_mask}
-    #         extra_data = self.compute_extra_data(noisy_data)
+            # Prepare noisy data, focusing on using the given y.
+            noisy_data = {'t': t_norm, 'X_t': X, 'E_t': E, 'y_t': y, 'node_mask': node_mask}
+            extra_data = self.compute_extra_data(noisy_data)
             
-    #         # Refine X and E through the model's forward pass.
-    #         pred = self.forward(noisy_data, extra_data, node_mask)
-    #         sampled_s, _ = self.sample_p_zs_given_zt(t_norm, t_norm, pred.X, pred.E, y, node_mask)
-    #         X, E = sampled_s.X, sampled_s.E
+            # Refine X and E through the model's forward pass.
+            pred = self.forward(noisy_data, extra_data, node_mask)
+            sampled_s, _ = self.sample_p_zs_given_zt(t_norm, t_norm, pred.X, pred.E, y, node_mask)
+            X, E = sampled_s.X, sampled_s.E
 
-    #     # Finalize the generated structures.
-    #     X_out = F.softmax(X, dim=-1)
-    #     E_out = F.softmax(E, dim=-1)
+        # Finalize the generated structures.
+        X_out = F.softmax(X, dim=-1)
+        E_out = F.softmax(E, dim=-1)
         
-    #     # Collect and return generated samples.
-    #     samples = [(X_out[i, :n_nodes[i]], E_out[i, :n_nodes[i], :n_nodes[i]]) for i in range(batch_size)]
-    #     return samples
+        # Collect and return generated samples.
+        samples = [(X_out[i, :n_nodes[i]], E_out[i, :n_nodes[i], :n_nodes[i]]) for i in range(batch_size)]
+        return samples

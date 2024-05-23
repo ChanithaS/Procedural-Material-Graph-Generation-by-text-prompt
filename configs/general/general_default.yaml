@@ -5,7 +5,7 @@ wandb: 'online'             # online | offline | disabled
 gpus: 1                     # Multi-gpu is not implemented on this branch
 
 
-resume: '/Users/chanithas/Desktop/fyp/finall-digress-testing/Procedural-Material-Graph-Generation-by-text-prompt/outputs/2024-04-09/last-v1-copy.ckpt'           # If resume, path to ckpt file from outputs directory in main directory
+resume: null         # If resume, path to ckpt file from outputs directory in main directory
 # '/Users/chanithas/Desktop/fyp/finall-digress-testing/Procedural-Material-Graph-Generation-by-text-prompt/outputs/2024-04-07/22-28-37-graph-tf-model/checkpoints/graph-tf-model/last-v1.ckpt'
 test_only: null         # Use absolute path
 
